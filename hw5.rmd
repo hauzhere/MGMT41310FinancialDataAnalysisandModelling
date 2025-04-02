@@ -1,0 +1,497 @@
+---
+title: "Return"
+author: "Type your name here!"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+  slidy_presentation: 
+    slide_level: 3
+  ioslides_presentation:
+    slide_level: 3
+  beamer_presentation:
+    slide_level: 3
+---
+
+This is the R markdown (rmd) exercise file that accompanies the lecture notes. It will be your sandbox! Fill in the R code chunks, experiment, and have fun!
+
+# Data Preparation
+
+### Import directly using quantmod
+
+
+Select any stock other than IBM Download the data using getSymbols() of the quantmod library. Choose a stock that has paid dividend in the past (hint: Google the company name and include "ex-dividend date" in your search). Do not specify "from" and "to", so that quantmod will return the last 10 years of data:
+```{r}
+library(quantmod)
+stock_symbol <- "GS"
+stock_data <- getSymbols(stock_symbol, auto.assign = FALSE)
+```
+
+# Price Return
+
+### Price Return
+
+
+See 2.1 of Ang's text.
+
+### Calculate Price Return By Definition
+
+
+Calculate the daily price return on your stock by definition:
+```{r}
+Close <- Cl(stock_data)
+price.return <- (Close - lag(Close)) / lag(Close)
+head(price.return)
+```
+
+
+### Using Diff()
+
+
+Use Diff() to calculate the daily price return of your stock:
+```{r}
+price.return <- diff(Close)/lag(Close)
+head(price.return)
+```
+
+
+### Using Delt()
+
+
+Use Delt() to calculate the daily price return of your stock:
+```{r}
+price.return <- Delt(Close)
+head(price.return)
+```
+
+### Plot Price Return
+
+
+Plot the price return of your stock:
+```{r}
+plot(price.return)
+```
+
+# Total Return
+
+### Total Return
+
+
+Reading: Ch 2.2 of Ang's text.
+
+### Ex-dividend date
+
+
+Google to find out the most recent ex-dividend date of your stock. (If a stock has never paid dividend, then the exercise here does not apply to the stock.)
+
+Select a time window that include this ex-dividend date and print the stock prices in this time window:
+```{r}
+cbind(Cl(stock_data), Ad(stock_data))['2018-08-06/2018-08-11']
+```
+
+This explains how adjusted close is calculated:
+
+https://help.yahoo.com/kb/SLN28256.html
+
+What is your intuition for the adjustment?
+
+### Calculate Total Return
+
+
+Calcualte the total return on your stock.
+```{r}
+Adjusted <- Ad(stock_data)
+total.return <- (Adjusted - lag(Adjusted)) / lag(Adjusted)
+head(total.return)
+```
+
+### Price Return vs. Total Return
+
+
+Combine the price return and total return into one xts object, and plot the two returns for a subsample that contains the latest ex-dividend date:
+```{r}
+returns <- cbind(price.return, total.return)
+names(returns) <- c('price.return', 'total.return')
+plot(returns['2018-08-06/2018-08-15'],
+     legend.loc='bottom', major.ticks = "days")
+```
+
+### Adjusted Close vs. Unadjusted Close 
+
+
+Plot the adjusted close and unadjusted close of your stock:
+```{r}
+plot(cbind(Cl(stock_data), Ad(stock_data)))
+```
+
+
+# Log Return
+
+### Log Return 
+
+
+Reading: Ch 2.3 of Ang's text.
+
+### Calculate Log Return
+
+
+Calculate and plot the log return for your stock:
+```{r}
+log.return <- diff(log(Ad(stock_data)))
+plot(log.return)
+```
+
+### Log Return and Total Return
+
+
+Compare log return to total return. How close are they?
+They are very close
+```{r}
+plot(cbind(total.return, log.return))
+
+```
+
+# Cumulative Return
+
+### Cumulative Return
+
+
+Reading: Ch 2.4 of Ang's text.
+
+### Calculating Gross Return
+
+
+Calculate the gross return:
+```{r}
+gross.return <- total.return + 1
+head(gross.return)
+```
+
+### Calculating Cumulative Return
+
+
+Calculate the cumulative return:
+```{r}
+gross.return[1] <- 1
+cumulative.return <- cumprod(gross.return)
+head(cumulative.return)
+```
+
+### Plot the cumulative return
+
+
+Plot the cumulative return:
+```{r}
+plot(cumulative.return)
+```
+
+How does it compare to the normalized price path?
+
+# Monthly Return
+
+### Monthly Return
+
+
+Use to.monthly() to convert daily prices to monthly prices:
+```{r}
+monthly.price <- to.monthly(Adjusted)
+head(monthly.price)
+```
+
+### Select the end-of-month prices
+
+
+Select the end-of-month prices:
+```{r}
+monthly.Close <- monthly.price[,4]
+names(monthly.Close) <- paste0(stock_symbol, ".Close")
+head(monthly.Close)
+```
+
+### Calculate Monthly Return
+
+
+Calculate monthly returns:
+```{r}
+monthly.return <- Delt(monthly.Close)
+names(monthly.return) <- stock_symbol
+head(monthly.return)
+```
+
+# Empirical Facts
+
+### Empirical Facts
+
+
+Remove the NA of your stock returns:
+```{r}
+r <- na.omit(monthly.return)
+head(r)
+```
+
+
+### Monthly Return
+
+
+Plot the monthly returns:
+```{r}
+plot(r)
+```
+
+## Summary Statistics
+
+### summary()
+
+
+Find the the first quartile, median, and the third quartile of the stock returns:
+```{r}
+summary(r)
+```
+first quartile: -0.052854
+median: 0.009394
+third quartile: 0.068852
+### Range and Interquartile Range
+
+
+Find the range and interquartile range of the stock returns:
+```{r}
+range(r)
+IQR(r)
+```
+
+### Box Plot
+
+
+Make the box plot of your stock's returns:
+```{r}
+boxplot(as.vector(r), horizontal = TRUE)
+```
+
+Understanding box plot: http://onetipperday.sterding.com/2012/06/about-boxplot.html
+
+
+### Mean
+
+
+Calculate the average return of your stock:
+```{r}
+mean(r)
+```
+
+### Variance
+
+
+Calculate the variance of stock return:
+```{r}
+var(r)
+```
+
+### Standard Deviation
+
+
+Calculate the standard deviation of stock returns:
+```{r}
+sd(r)
+```
+
+## Are returns normally distributed?
+
+### Histogram
+
+
+Plot the histogram of the monthly stock return:
+```{r}
+hist(r)
+```
+
+
+Readings: 
+
+https://www.statmethods.net/graphs/density.html
+
+https://www.r-bloggers.com/basics-of-histograms/
+
+### Change the number of bins
+
+
+Experiment with the "breaks" option for hist():
+```{r}
+hist(r, breaks = 20)
+```
+
+### Frequency vs Density 
+
+
+Plot the density instead of frequency:
+```{r}
+hist(r, breaks = 20, freq = FALSE, main = "Density plot")
+```
+
+### Kernel Density
+
+
+Estimate the kernel density and plot it over the histogram:
+```{r}
+hist(r, breaks = 20, freq = FALSE, main = "Density Plot")
+lines(density(r), col='red', lwd = 2)
+```
+
+### Add a Normal Curve
+
+
+Find help on curve() and dnorm() and use them to plot a normal density on top of the histogram.
+```{r}
+hist(r, breaks = 20, freq = FALSE, main = "Density Plot")
+curve(dnorm(x, mean = mean(r, na.rm = TRUE), sd = sd(r, na.rm = TRUE)), 
+      col = "blue", lwd = 2, add = TRUE)
+```
+
+What do you observe?
+The curve is smoother
+### quartile
+
+
+Use quantile() to return the first quartile, median, and the third quartile of the stock returns:
+```{r}
+quantile(r)
+```
+
+Reading: http://www.r-tutor.com/elementary-statistics/numerical-measures/quartile
+
+### quantile
+
+
+Find the 5% and 95% quantiles of your stock returns.
+```{r}
+quantile(r,c(0.05,0.95))
+```
+
+Reading: http://www.r-tutor.com/elementary-statistics/numerical-measures/percentile
+
+In spreadsheet, it is accomplished using percentile().
+
+### QQ plot
+
+
+Make a QQ plot of the stock returns agains a random sample that is normally distributed with the same mean and standard deviation:
+```{r}
+qqplot(rnorm(length(r), mean(r), sd(r)), as.vector(r))
+```
+
+
+Reading: https://www.dummies.com/programming/r/how-to-use-quantile-plots-to-check-data-normality-in-r/
+
+### QQ plot to check normality
+
+
+Use qqnorm() to make QQ plot. Are returns normally distributed?
+Yes
+
+```{r}
+qqnorm(r)
+qqline(r, col = "red")
+```
+
+
+### Skewed Distributions
+
+
+Reading: https://whatis.techtarget.com/definition/skewness
+
+### Measuring Skewness
+
+
+Calculate the skewness of your stock's returns. You may need to install the e1071 package first.
+
+```{r}
+library(e1071)
+skewness(r)
+```
+
+What is your conclusion?
+Mean is less than mode
+
+### Kurtosis
+
+
+Calculate the kurtosis of your stock's returns. 
+```{r}
+kurtosis(r)
+```
+
+What is your conclusion?
+Fat-tailed distribution
+Reading: http://www.r-tutor.com/elementary-statistics/numerical-measures/kurtosis
+
+
+## Return Predictability
+
+### Return Predictability
+
+
+Make a scatter plot of the stock return against its lag:
+```{r}
+par(pty="s")
+plot(as.vector(r), as.vector(lag(r)))
+```
+Do past returns predict future returns according to the scatter plot?
+
+### Autocorrelation
+
+
+Compute the correlation of the return against its lag.
+```{r}
+cor(r[2:length(r)], lag(r)[2:length(r)])
+```
+
+### ACF
+
+
+Use acf() to plot the autocorrelations:
+```{r}
+acf(r)
+```
+
+What are your findings?
+
+Reading: https://programming-r-pro-bro.blogspot.com/2011/10/predictability-of-stock-returns-using_28.html
+
+### Rolling Volatility
+
+
+Calcualte the rolling volatility of daily stock returns and intepret:
+```{r}
+rolling_vol <- rollapply(total.return, width = 30, FUN = sd)
+plot(rolling_vol)
+```
+
+rollapply() is a very useful function that can be used to calculate rolling sum, rolling mean, etc.
+
+### CBOE Volatility Index (VIX)
+
+
+Reading: http://www.cboe.com/vix
+
+### Getting VIX Data
+
+
+The VIX data can be downloaded from: https://www.cboe.com/tradable_products/vix/vix_historical_data/
+
+(If the above link doesn't work, you may need to Google to find out the correct link.)
+
+Download and import the VIX data. (Note: when downloading the data, right click the download link and "save link as" to save to file to the same folder as your rmd file.  Do not open the csv file in Excel to save it to a directory since this will mess up the file format.)
+```{r}
+vix_data <- read.csv("VIX_History.csv", header = TRUE)
+```
+
+### Historical VIX
+
+
+Plot the historical VIX.  Do you see time-varying volatility?
+```{r}
+vix_data$DATE <- as.Date(vix_data$DATE, format = "%m/%d/%Y")
+vix_xts <- xts(vix_data[,2:5], order.by=vix_data[,1])
+plot(vix_xts$CLOSE)
+```
+
