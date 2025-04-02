@@ -1,0 +1,442 @@
+---
+title: "Factor Models"
+author: "Type your name here!"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+  slidy_presentation: 
+    slide_level: 3
+  ioslides_presentation:
+    slide_level: 3
+  beamer_presentation:
+    slide_level: 3
+---
+
+This is the R markdown (rmd) exercise file that accompanies the lecture notes. It will be your sandbox! Fill in the R code chunks, experiment, and have fun!
+
+# Factor Models
+
+### Factor Models
+
+
+Reading: Ch5 of Ang's text.
+
+# CAPM
+
+### CAPM
+
+### Getting Data
+
+
+Pick a stock other than IBM, and download the price data:
+
+```{r}
+library(quantmod)
+stock_data <- getSymbols("NANC", src = "yahoo", from = "2020-01-01", auto.assign = FALSE)
+```
+
+### Monthly Return
+
+
+Calculate the monthly returns on the stock, and convert the returns to percentage terms:
+```{r}
+Close <- Ad(stock_data)
+monthly.price <- to.monthly(Close)
+monthly.Close <- monthly.price[,4]
+r_i <- Delt(monthly.Close) * 100
+names(r_i) <- 'r_i'
+r_i <- na.omit(r_i)
+head(r_i)
+```
+
+### Make it a function
+```{r}
+getMonthlyReturn <- function(stock_data, name = "r_monthly"){
+  Close <- Ad(stock_data)
+  monthly.price <- to.monthly(Close)
+  monthly.Close <- monthly.price[,4]
+  r_monthly <- Delt(monthly.Close) * 100
+  names(r_monthly) <- name
+  r_monthly <- na.omit(r_monthly)
+  return(r_monthly)
+}
+```
+```{r}
+r_i <- getMonthlyReturn(stock_data, "r_i")
+head(r_i)
+```
+
+
+### Return on Individual Asset
+
+
+Plot the time series of stock returns:
+```{r}
+plot(r_i)
+```
+
+### Market Index
+
+
+Download S&P index data from Yahoo Finance:
+```{r}
+GSPC <- getSymbols("^GSPC", auto.assign = FALSE)
+```
+
+### Market Return
+
+
+Calculate the monthly returns on the S&P 500 index:
+```{r}
+r_m <- getMonthlyReturn(GSPC,"r_m")
+head(r_m)
+```
+
+### Market Return
+
+
+Plot the time series of market returns:
+```{r}
+plot(r_m)
+```
+
+### Risk-Free Rate Data
+
+
+Download the one-month Treasury Constant Maturity Rate from:
+https://fred.stlouisfed.org/series/GS1M
+
+Read in the risk-free rates:
+```{r}
+GS1M <- read.csv("GS1M.csv", header = TRUE)
+``` 
+```{r}
+GS1M$DATE <- as.Date(GS1M$observation_date, format ="%Y-%m-%d")
+GS1M$DATE <- as.yearmon(GS1M$DATE)
+r_f_annualized <- xts(GS1M[,2], order.by = GS1M$DATE)
+names(r_f_annualized) <- "r_f"
+```
+
+
+### Convert the annuaized yield to back monthly yield
+
+
+Convert the risk-free rate to a monthly yield:
+```{r}
+r_f <- r_f_annualized / 12
+plot(r_f)
+```
+
+How did the short-term rate change with economic cycle?
+
+### Combining the rates
+
+
+Combine the individual asset returns, market returns, and risk-free rates, and subset the data to drop the NA's of the initial observations:
+```{r}
+returns <- cbind(r_i, r_m, r_f)
+returns <- na.omit(returns)
+plot(returns, legend.loc = "bottomright")
+```
+
+### Calculate Excess Returns
+
+### Scatter Plot: $R_i$ vs. $R_m$
+
+
+Make a scatter plot of stock return against market return:
+```{r}
+returns$R_i <- returns$r_i - returns$r_f
+R_i <- returns$R_i
+returns$R_m <- returns$r_m - returns$r_f
+R_m <- returns$R_m
+plot(as.vector(R_m), as.vector(R_i))
+```
+
+
+### Estiamte CAPM
+
+
+Run the linear regression to estimate the CAPM:
+```{r}
+CAPM <- lm(R_i ~ R_m)
+summary(CAPM)
+```
+
+### Regression Line
+
+
+Add the regression line to the scatter plot using abline():
+```{r}
+plot(as.vector(R_m),as.vector(R_i), axes = FALSE)
+abline(CAPM)
+axis(1, pos=0)
+axis(2, pos=0)
+```
+
+Reading: https://www.theanalysisfactor.com/linear-models-r-plotting-regression-lines/
+
+Also check out the help on abline() that adds straight lines to existing plot.
+
+### Intepretation
+
+
+Inteprete your regression results. Is the alpha estimate statistically significant? Is the beta estimate statistically significant?
+```{r}
+summary(CAPM)$coefficients
+(alpha <- CAPM$coefficients[1])
+```
+Not statistically significant
+### Idiosyncratic Risk and Systematic Risk
+```{r}
+(beta <- CAPM$coefficients[2])
+```
+Statistically significant
+
+Based on the scatter plot and the CAPM regression line, expain idiosyncratic risk vs. systematic risk.
+
+### Idiosyncratic Risk
+
+
+Plot the residuals of the CAPM regression:
+```{r}
+CAPM_resid <- residuals(CAPM)
+plot(CAPM_resid[,1])
+```
+
+### Risk Decomposition: The Calculation
+
+
+Decompose total risk into idiosyncratic risk and systematic risk:
+```{r}
+(idiosyncratic_risk <- var(CAPM_resid))
+(total_risk <- var(R_i))
+(systematic_risk <- total_risk - idiosyncratic_risk)
+```
+
+Can you create a bar chart to plot the three types of risk?
+```{r}
+barplot(c(idiosyncratic_risk, total_risk, systematic_risk), col = c("gray70", "blue", "red"))
+```
+ 
+### Risk Decomposition: The Theory
+
+
+Calculate systematic risk directly:
+```{r}
+beta^2 * var(R_m)
+```
+
+
+### Time-varying Beta
+
+### Regression Function
+
+
+Define a function that returns the regresion beta, where the input is an xts object with stock excess return R_i and market excess return R_m:
+```{r}
+get_beta <- function(X)
+{
+  roll.reg = lm(R_i ~ R_m, data = X)
+  return(roll.reg$coeff[2])
+}
+get_beta(returns)
+```
+
+
+### Rolling Window Regression
+
+
+Use rollapply() to estiamte the rolling beta:
+```{r}
+betas_over_time <- rollapply(returns, width = 10, FUN = get_beta, by.column = FALSE)
+```
+
+### Time-Varying Beta
+
+
+Plot the betas. How does it change over time?
+```{r}
+plot(na.omit(betas_over_time))
+```
+It increases
+
+# Fama-French Three-Factor Model
+
+### Portfolios Formed on Size and Book-to-Market
+
+### 25 Portfolios Formed on Size and Book-to-Market
+
+
+Download and import the 25 size and book-to-market portfolios from Ken French's data library. The link is:
+http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/25_Portfolios_5x5_CSV.zip
+
+Use read.csv() to import the data. The data file contains both monthly and annual data. Specify "nrows" in the read.csv() to specify the maximum number of rows to read in only the monthly data.
+
+```{r}
+size_BM_portfolios <- read.csv(file = "25_Portfolios_5x5.CSV", skip = 15, nrows = 1119-16)
+```
+
+### Average Returns
+
+
+Use apply() to apply mean() to each column to calculate the average return for each portflio.
+
+```{r}
+(average_returns <- apply(size_BM_portfolios[,2:26], MARGIN = 2, FUN = mean))
+```
+
+### Average Returns: Reshaped
+
+
+Reshaped the average return vector into a 5x5 matrix:
+```{r}
+average_returns_mat <- matrix(average_returns, nrow = 5)
+colnames(average_returns_mat) <- c("SMALL", "ME2", "ME3", "ME4", "BIG")
+rownames(average_returns_mat) <- c("LoBM", "BM2","BM3","BM4", "HiBM")
+average_returns_mat
+```
+Across the size dimension, what did you find?
+Across the book-to-market dimension, what did you find?
+
+### Heat Map
+
+
+You may have to install the gplots package first. On the console, issue the following command:
+
+install.packages("gplots")
+
+Then create a heapmap to visualize the table of average returns:
+
+```{r}
+install.packages("gplots")
+```
+
+
+```{r}
+library(gplots)
+colfunc <- colorRampPalette(c("black", "red"))
+heatmap.2(average_returns_mat, 
+          Rowv = FALSE, 
+          Colv = FALSE,
+          dendrogram = "none",
+          col = colfunc(15), 
+          tracecol = NA, 
+          density.info = 'none')
+```
+
+
+This is a good article on generating heat map in R:
+
+https://davetang.org/muse/2010/12/06/making-a-heatmap-with-r/
+
+### Empirical Difficulty of CAPM
+
+
+The paper every finance student should read: Fama and French (1992) The Cross‐Section of Expected Stock Returns, available at:
+https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.1992.tb04398.x
+
+### Fama-French Three-Factor Model
+
+
+Another paper by Fama and French: Common risk factors in the returns on stocks and bonds, https://www.sciencedirect.com/science/article/pii/0304405X93900235
+  
+### Data
+
+
+The data file is http://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_CSV.zip
+
+Download the CSV version and unzip it. And read in the text file with read.csv(). The data file contains both monthly and annual data. Specify "nrows" in the read.csv() to specify the maximum number of rows to read in only the monthly data.
+
+```{r}
+FF.raw <- read.csv(file = "F-F_Research_Data_factors.csv",skip = 3, nrows = 1103)
+```
+
+### A quick view
+
+
+Check the head and tail of the data.
+```{r}
+head(FF.raw)
+tail(FF.raw)
+```
+
+### Convert the data frame to xts
+
+
+Convert the FF factors to xts:
+```{r}
+library(quantmod)
+FF_yearmonth <- as.yearmon(as.character(FF.raw[,1]), format="%Y%m")
+FF_factors <- xts(FF.raw[,2:5], order.by = FF_yearmonth)
+```
+
+
+### Mutual Fund
+
+
+Reading: https://www.fidelity.com/learning-center/investment-products/mutual-funds/what-are-mutual-funds
+
+Select a mutual fund (other than LSVEX) to apply the FF Model.  You can find some of the "best" mutual funds here:
+
+https://money.usnews.com/funds/mutual-funds/most-popular
+
+### Mutual Fund Data
+
+
+Download the mutual fund historical prices from Yahoo Finance:
+```{r}
+fund.data <- getSymbols("BRAGX",auto.assign = FALSE, from="1990-01-01")
+plot(Ad(fund.data))
+```
+
+### Mutual fund returns
+
+
+Calculate and plot the mutual fund's monthly returns:
+```{r}
+r_p <- getMonthlyReturn(fund.data, "r_p")
+plot(r_p)
+```
+
+### Merging the data
+
+
+Merge the mutual fund returns with the FF factors:
+```{r}
+FF_returns <- na.omit(cbind(FF_factors,r_p))
+head(FF_returns)
+tail(FF_returns)
+```
+
+### Excess Returns
+
+
+Calculate the excess return on the mutual fund
+```{r}
+FF_returns$R_p <- FF_returns$r_p - FF_returns$RF
+head(FF_returns)
+```
+
+### Fama-French 3-Factor Model Regression
+
+
+Estimate the FF 3-factor model for the mutual fund:
+```{r}
+FF_model <- lm(R_p ~ Mkt.RF + SMB + HML, data = FF_returns)
+summary(FF_model)
+```
+
+What is your intepretations of the results?
+
+### Compared to CAPM
+
+
+Estiamte the CAPM for the mutual fund:
+```{r}
+CAPM <- lm(R_p ~ Mkt.RF,data = FF_returns)
+summary(CAPM)
+```
+

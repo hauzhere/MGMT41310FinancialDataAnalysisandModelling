@@ -1,0 +1,236 @@
+---
+title: "Risk"
+author: "Type your name here!"
+date: "`r Sys.Date()`"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+  slidy_presentation: 
+    slide_level: 3
+  ioslides_presentation:
+    slide_level: 3
+  beamer_presentation:
+    slide_level: 3
+---
+
+This is the R markdown (rmd) exercise file that accompanies the lecture notes. It will be your sandbox! Fill in the R code chunks, experiment, and have fun!
+
+# Value at Risk
+
+### Basic Idea
+
+
+Simulate your P&L data:
+```{r}
+PL_simulated <- rnorm(365, mean = 0, sd = 10)
+```
+
+Introduction to VaR: https://www.investopedia.com/articles/04/092904.asp
+
+### The Histogram
+
+
+Estimate the kernel density and plot it over the histogram:
+```{r}
+hist(PL_simulated, breaks = 29, freq = FALSE)
+lines(density(PL_simulated), col = 'red', lwd = 2)
+```
+
+### 5% one-day VaR Calculation
+
+
+Calculate the 5% one-day VaR for the simulated P&L data:
+```{r}
+(quantile_5_percent <- quantile(PL_simulated, prob = 0.05))
+(VaR_5_percent <- -quantile_5_percent)
+
+```
+
+### 1% one-day VaR Calculation
+
+
+Calculate the 1% one-day VaR for the simulated P&L data:
+```{r}
+(quantile_1_percent <- quantile(PL_simulated, prob = 0.01))
+(VaR_1_percent <- -quantile_1_percent)
+
+```
+
+### VaR Given Realized Returns
+
+
+Pick your own mutual fund for VaR calculation:
+
+http://eoddata.com/stocklist/USMF.htm
+
+### Mutual Fund Data
+
+
+Download the mutual fund historical prices from Yahoo Finance:
+```{r}
+library(quantmod)
+symbol <- "BTCRX"
+fund.data <- getSymbols(symbol, auto.assign = FALSE, from = "1900-01-01")
+```
+
+### Plot the data
+
+
+Plot the adjusted close:
+```{r}
+head(fund.data)
+plot(fund.data$BTCRX.Adjusted)
+
+```
+
+### Mutual fund returns
+
+
+Calculate and plot the mutual fund's daily returns:
+```{r}
+r_p <- Delt(Ad(fund.data)) * 100
+r_p <- na.omit(r_p)
+names(r_p) <- 'r_p'
+plot(r_p)
+```
+
+### Summary
+
+
+Summarize the returns:
+```{r}
+summary(r_p)
+               
+```
+
+
+### Two Methods to Calculate VaR
+
+### Historical VaR
+
+
+Calculate the historical VaR in percentage terms:
+```{r}
+(r_p_quantile_5_percent <- quantile(r_p, prob = 0.05))
+(historical_VaR_percentage_terms <- - r_p_quantile_5_percent)
+
+```
+
+### From Percentage Terms to Dollar Terms
+
+
+Choose an initial investment, and convert the percentage VaR to dollar VaR:
+
+```{r}
+initial_investment <- 3000
+(historical_VaR_dollar_terms <- initial_investment * historical_VaR_percentage_terms / 100) 
+```
+
+### The Parametric Approach
+
+
+Calculate the mean and standard deviation of the returns:
+```{r}
+(miu <- mean(r_p))
+(sig <- sd(r_p))
+```
+
+
+### VaR Calculation: Finding Quantile
+
+
+Calculate the quantile for a standard normal distribution:
+```{r}
+(z_quantile <- qnorm(0.05))
+```
+
+
+
+### VaR Calculation
+
+
+Calculate the VaR in percentage terms and in dollar terms:
+```{r}
+r_p_quantile <- miu + sig * z_quantile
+(normal_VaR_percentage_terms <- -r_p_quantile)
+(normal_VaR_dollar_terms <- initial_investment * normal_VaR_percentage_terms / 100)
+```
+
+
+### VaR at different horizon
+
+
+Calculate mean and standard deviation at the annual horizon:
+```{r}
+(miu_annual <- 252 * miu)
+(sig_annual <- sqrt(252) * sig)
+```
+
+
+### Annual VaR
+
+
+Calculate the annual VaR for your investment:
+```{r}
+(r_p_annual_quantile <- miu_annual + sig_annual * z_quantile)
+(normal_VaR_annual_percentage_terms <- -r_p_annual_quantile)
+(normal_VaR_annual_dollar_terms <- initial_investment * normal_VaR_annual_percentage_terms / 100)
+
+
+```
+
+
+Note that we assume 252 trading days in a year:
+https://en.wikipedia.org/wiki/Trading_day
+
+### Historical VaR versus Parametric VaR
+
+
+Compare the historical VaR and the parametric (normal) VaR:
+```{r}
+historical_VaR_dollar_terms
+normal_VaR_dollar_terms
+```
+the normal VaR is larger
+### Are returns normally distributed?
+
+
+Plot the histogram and the fitted normal density function to match the mean and standard deviation:
+
+```{r}
+hist(r_p, breaks = 500, freq = FALSE)
+curve(dnorm(x, mean = mean(r_p), sd = sd(r_p)),
+      add=TRUE, col = "darkblue", lwd = 2)
+```
+
+### Probability of Observing Extrem Returns
+
+
+Calculate the tail probability of observing an extreme return (the minimum return), under the assumption that the return is normally distributed:
+```{r}
+(r_p_min <- min(r_p))
+pnorm(r_p_min, mean = miu, sd = sig)
+```
+
+# Expected Shortfall
+
+### VaR Shortcomings
+
+
+VAR versus expected shortfall: https://www.risk.net/risk-magazine/technical-paper/1506669/var-versus-expected-shortfall
+
+
+### Expected Shortfall (ES)
+
+### ES calculation
+
+
+Evalvulate the expected short fall, both in percentage terms and in dollar terms:
+```{r}
+left_tail <- r_p[r_p < r_p_quantile_5_percent]
+(ES_percentage_terms <- - mean(left_tail))
+(ES_dollar_terms <- initial_investment * ES_percentage_terms/100)
+historical_VaR_dollar_terms 
+
+```
