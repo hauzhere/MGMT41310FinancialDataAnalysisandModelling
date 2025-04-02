@@ -311,11 +311,6 @@ install.packages("gplots")
 Then create a heapmap to visualize the table of average returns:
 
 ```{r}
-install.packages("gplots")
-```
-
-
-```{r}
 library(gplots)
 colfunc <- colorRampPalette(c("black", "red"))
 heatmap.2(average_returns_mat, 
