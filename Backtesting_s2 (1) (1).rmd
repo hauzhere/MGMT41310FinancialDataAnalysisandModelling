@@ -1,0 +1,793 @@
+---
+fontsize: 10pt
+title: "Backtesting"
+output:
+  html_document: default
+  slidy_presentation:
+    slide_level: 3
+  ioslides_presentation:
+    slide_level: 3
+  pdf_document: default
+  beamer_presentation:
+    slide_level: 3
+---
+
+# Introduction
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, 
+                      tidy.opts=list(width.cutoff=60), tidy = FALSE,
+                       out.height = "65%", fig.align = 'center', fig.path='figs/')
+
+options(scipen = 1, digits = 5)
+```
+
+### References
+
+* The open-source software:
+
+https://github.com/braverock/quantstrat
+
+* Examples of using quantstrat:
+
+https://analyticsprofile.com/tag/quantstrat/
+
+https://quantstrattrader.wordpress.com/2014/09/09/nuts-and-bolts-of-quantstrat-part-i/
+
+The book "Backtesting Strategies with R" by Tim Trice is freely available at https://timtrice.github.io/backtesting-strategies/index.html
+
+### quantstrat
+
+* ``quantstrat provides a generic infrastructure to model and backtest signal-based quantitative strategies. It is a high-level abstraction layer (built on xts, FinancialInstrument, blotter, etc.) that allows you to build and test strategies in very few lines of code. " 
+
+* Follow the steps in the installation guideline pdf file (posted on the course webpage) to install quantstrat.
+
+
+
+
+* Load the library:
+
+```{r}
+library(quantstrat)
+```
+
+
+
+Much of this lecture notes follow the book "Backtesting Strategies with R" by Tim Trice.
+
+### A high-level overview
+
+```{r, out.width="80%", out.height="15%", echo=FALSE}
+download.file(url = "http://web.ics.purdue.edu/~zeng135/obmodel.png",
+          destfile = "obmodel.png",
+          mode = 'wb')
+knitr::include_graphics("obmodel.png")
+```
+
+
+* The instruments contain market data (the time series of asset prices)
+* The indicators are ‘features’ derived from the market data (feature extraction)
+* Signals are generated through interactions between the indicators and market data
+* Rules use the signals to generate buy/sell orders
+* The interaction between rules and orders generates transactions
+
+
+# Setup
+
+### Settings and Variables
+
+* First we set up the dates:
+```{r}
+startDate <- "2011-01-01" # First date of data to retrieve.
+```
+
+
+
+
+* Since we’ll be working with stocks in the U.S. market we need to set our currency object to USD.
+
+```{r}
+currency('USD')
+```
+
+
+### Symbols
+
+\footnotesize
+
+* You can choose to run the backtesting on multiple stocks:
+
+```{r}
+symbols <- c("NVDA", "AMZN", "AAPL", "JCI", "TEM")
+```
+
+
+
+
+```{r}
+getSymbols(Symbols = symbols, 
+           from = startDate)
+```
+
+
+
+* Tell quanstrat what instruments are present and what currency to use:
+
+```{r}
+stock(symbols, currency = "USD", multiplier = 1)
+```
+
+### Trade Size and Initial Equity
+
+```{r}
+initEq <- 1000000 #default initial equity in our portfolio
+tradesize <- 100000 #default trade size
+```
+
+### What's in a name?
+
+* Next we’ll assign proper names for our portfolio, account and strategy objects. 
+* These can be any name you want and should be based on how you intend to log the data later on.
+```{r}
+portfolio.st <- account.st <- "testing"
+```
+
+### Initialization
+\tiny
+
+* We remove any residuals from previous runs by clearing out the portfolio and account values. 
+```{r}
+rm.strat(portfolio.st)
+rm.strat(account.st)
+```
+
+
+* Now we initialize our portfolio, account and orders. We will also store our strategy to save for later.
+```{r}
+initPortf(name = portfolio.st,
+          symbols = symbols)
+```
+
+
+```{r}
+initAcct(name = account.st,
+         portfolios = portfolio.st,
+         initEq = initEq)
+```
+
+
+```{r}
+initOrders(portfolio = portfolio.st)
+```
+
+
+* Create to strategy object:
+```{r}
+strategy.st <- strategy(portfolio.st)
+```
+
+# Indicators
+
+### Indicators
+
+* Market data is noisy. To gain insights from this data, we need to transform it through **indicators**. 
+
+* The examples we will use are the 200-day and 50-day **SMA**. It is a basic average of the past n-day of the closing prices. Think about these indicators as smoothed prices. 
+
+* We will also study RSI.
+
+
+### Pick a stock to plot the indicator
+\footnotesize
+
+```{r, results = "asis" }
+# plot the first symbol
+stock_data <- get(symbols[1])
+```
+  
+
+```{r}
+head(stock_data)
+```
+
+### Trading rationale with SMA
+
+* We will implement the trading strategy with SMA.
+* But first we need to formalize the trading rationale with SMA.
+
+### Define the indicator function to be used
+
+\tiny
+
+* quanstrat allows users to define their own indicator functions.
+
+* If you implement your own indicator function, you need to copy and paste it here, and run the function definition before including it into quanstrat. 
+
+* As an example, we will use the mySMA function that we defined previously:
+
+```{r}
+# Define the ROC function (adjusted for single-column RSI-like output)
+myROC <- function(stock_data, n = 30) {  
+  # Use a single price column
+  price <- Cl(stock_data) 
+  roc <- ((price - Lag(price, n)) / Lag(price, n)) * 100
+  colnames(roc) <- paste0("ROC_", n)
+  return(roc)  
+}
+```
+
+
+### Plot the SMA
+\scriptsize
+
+```{r, fig.keep='last'}
+# Compute simple moving average (SMA) across 50 and 200 days
+# The SMA function is from the TTR package, which is automatically 
+# loaded when one loads the quantmod package.
+# Use lines() to add the SMA lines to the plot of closing price.
+plot(Cl(stock_data))
+lines(myROC(stock_data, n = 50), col = "blue")
+lines(myROC(stock_data, n = 200), col = "red")
+```
+
+
+
+
+### Adding the sma50 Indicator to Strategy
+
+Adding an indicator in quantstrat has five parts to it:
+
+1) The add.indicator function call
+2) The name of the strategy to add the indicator to (strategy.st)
+3) The name of the indicator function, in quotes (E.G. such as “SMA”, “RSI”, etc.)
+4) The arguments to the above indicator function, which are the INPUTS in this statement arguments=list(INPUTS)
+5) The label for the indicator (it has to be unique).
+
+
+```{r}
+strategy.st <- add.indicator(strategy = strategy.st,
+                             name = "SMA",
+                             arguments = list(x = quote(Cl(mktdata)), n = 50),
+                             label = "sma50")
+```
+
+
+### Adding the sma200 Indicator to Strategy
+
+
+```{r}
+strategy.st <- add.indicator(strategy = strategy.st,
+                             name = "SMA",
+                             arguments = list(x = quote(Cl(mktdata)), n = 200),
+                             label = "sma200")
+```
+
+```{r}
+strategy.st <- add.indicator(strategy = strategy.st,
+                             name = "myROC",
+                             arguments = list(stock_data = quote(mktdata), n = 30),
+                             label = "ROC_30")
+```
+
+### User-defined indicator function for RSI
+\tiny
+
+* Again, quanstrat allows users to define their own indicator functions.
+
+* If you implement your own indicator function, you need to copy and paste it here, and run the function definition before including it into quanstrat. 
+
+* As an example, we will use the myRSI function that we defined previously:
+
+```{r}
+myRSI <- function(stock_data, n = 14){
+  x <- Cl(stock_data)
+  names(x) <- 'price'
+  
+  # Calculate the change in price:
+  x$delta<-diff(x$price)
+  
+  # Create dummy variables to indicate whether price went up or price went down:
+  x$up<-ifelse(x$delta>0,1,0)
+  x$down<-ifelse(x$delta<0,1,0)
+  
+  # Calculate price change for up days and down days separately:
+  x$up.val<-x$delta * x$up
+  x$down.val<- -x$delta * x$down
+  
+  # First Average Gain = Sum of Gains over the past 14 periods / 14.
+  # First Average Loss = Sum of Losses over the past 14 periods / 14 
+
+  x$up.avg <- NA
+  x$down.avg <- NA
+  x$up.avg[n+1] <- mean(x$up.val[2:(n+1)])
+  x$down.avg[n+1] <- mean(x$down.val[2:(n+1)])
+  
+  # The second, and subsequent, calculations are based on the prior averages and the current gain loss:
+  #  - Average Gain = [(previous Average Gain) x 13 + current Gain] / 14.
+  #  - Average Loss = [(previous Average Loss) x 13 + current Loss] / 14. 
+  for (i in (n+2):nrow(x)){
+    x$up.avg[i] <- (x$up.avg[[i-1]] * (n-1) 
+                            + x$up.val[[i]])/n
+  
+    x$down.avg[i] <- (x$down.avg[[i-1]] * (n-1) 
+                            + x$down.val[[i]])/n
+  }
+  # Calculate RS = Average Gain / Average Loss
+  x$RS<-x$up.avg/x$down.avg
+  
+  # Calculate RSI = 100 – [100 / ( 1 + RS ) ]
+  x$RSI <- 100-(100/(1+x$RS))
+  return(x$RSI)
+}
+```
+
+
+### Trading rationale with RSI
+
+* We will implement trading strategy with RSI. 
+* What is the trading rationale with RSI?
+
+### RSI Plot
+
+```{r}
+# Calculate ROC with 10-day look back
+roc_10 <- myROC(stock_data, n = 10)
+
+plot(roc_10, main = "10-Day ROC", ylab = "Rate of Change (%)")
+```
+
+### Adding RSI Indicator
+
+```{r, tidy = F}
+strategy.st <- add.indicator(strategy = strategy.st,
+              name = 'myRSI',
+              arguments = list(stock_data = quote(mktdata), n = 3),
+              label = 'RSI_3')
+```
+
+
+* Note that indicator labels should be unique.
+
+
+### Inspecting Indicator
+
+\scriptsize
+
+* The following is a quick way of inspecting indicators output:
+
+```{r}
+# apply the indicators to a stock:
+testIndicator <- applyIndicators(strategy.st, mktdata=stock_data)
+```
+
+
+```{r}
+tail(testIndicator, n = 50)
+```
+
+# Signals
+
+### Signals
+
+* Signals are interactions of indicators with market data or other indicators. 
+  - Essentially, they are used to determine when we will buy or sell one of the pre-defined assets in our portfolio. 
+* For example, a trend signal may be when a shorter lookback period SMA crosses over a longer lookback period SMA (in our case, the `r 50`-day SMA crosses above the `r 200`-day SMA). 
+
+### Different Types of Signals
+
+There are five types of signals found in quantstrat.
+
+* sigComparison
+* sigCrossover
+* sigThreshold
+* sigFormula
+* sigPeak
+
+### sigComparison signal
+\scriptsize
+
+* sigComparison: Signal continuously comparing two different quantities, returns a 1 if the relationship is true.
+
+* For example: A sigComparison signal that will return 1 when 50-day SMA is above 200-day SMA:
+
+```{r}
+strategy.st <- 
+   add.signal(strategy = strategy.st, 
+              name = 'sigComparison',
+              arguments = list(columns=c("sma50", "sma200"),
+                               relationship = "gt"),
+              label = "sma50_above_sma200")
+```
+
+
+* Notice:
+
+1) The call to add.signal
+2) The name of the strategy (strategy.st)
+3) The name of the signal function (sigComparison for this first signal)
+4) The arguments to the signal function, passed in as arguments=list(args)
+5) The label for the signal which should be unique (and meaningful).
+6) Relationship "gt" stands for "greater than". "lt" stands for "less than".
+
+### sigCrossover
+\footnotesize
+
+* sigCrossover: The same as sigComparison but only returns value of 1 on the **first occurence** of the relationship changing from false to true.
+
+
+* Example: a sigCrossover signal that returns 1 when 50-day SMA **first** drop below 200-day SMA:
+
+
+```{r}
+strategy.st <- add.signal(strategy = strategy.st,
+           name = "sigCrossover",
+           arguments = list(columns=c("sma50", "sma200"),
+                            relationship = "lt"),
+           label = "sma50_x_below_sma200")
+```
+
+
+### sigCrossover
+
+
+* Example: a sigCrossover signal that returns 1 when 50-day SMA **first** move above 200-day SMA:
+
+```{r}
+strategy.st <- add.signal(strategy = strategy.st,
+           name = "sigCrossover",
+           arguments = list(columns=c("sma50", "sma200"),
+                            relationship = "gt"),
+           label = "sma50_x_above_sma200")
+```
+
+### sigThreshold: cross = TRUE
+\footnotesize
+
+* sigThreshold: Compares a range-bound indicator (like our RSI that oscillated between 0 and 100) to a static (fixed) quantity we define. 
+
+* With cross = TRUE, sigThreshold mimics sigCrossover 
+
+```{r}
+strategy.st <- add.signal(strategy = strategy.st,
+                          name = "sigThreshold",
+                          arguments = list(column = "ROC_30",
+                                           threshold = 0,
+                                           relationship = "gt",
+                                           cross = TRUE),
+                          label = "ROC_30_above_0")
+
+strategy.st <- add.signal(strategy = strategy.st,
+                          name = "sigThreshold",
+                          arguments = list(column = "ROC_30",
+                                           threshold = 0,
+                                           relationship = "lt",
+                                           cross = TRUE),
+                          label = "ROC_30_below_0")
+```
+
+
+* Example: a sigThreshold signal that returns 1 *the first instance* when RSI is above 80 (indication of asset being overbought):
+```{r}
+strategy.st <- add.signal(strategy = strategy.st,
+                          name = "sigThreshold",
+                          arguments = list(column = "RSI_3",
+                                           threshold = 80,
+                                           relationship = "gt",
+                                           cross = TRUE),
+                          label = "RSI_3_x_above_80")
+```
+
+### sigThreshold: cross = TRUE
+
+
+* Example: a sigThreshold signal that returns 1 *the first instance* when RSI is below 20 (indication of asset being oversold):
+```{r}
+strategy.st <- add.signal(strategy.st, name = "sigThreshold",
+           arguments = list(column = "RSI_3", threshold = 20,
+                            relationship = "lt", cross = TRUE),
+           label = "RSI_3_x_below_20")
+```
+
+
+### sigThreshold: cross = FALSE
+
+* With cross = FALSE, sigThreshold mimics sigComparison 
+
+* Example: a sigThreshold signal which specifies *all instance* when RSI is below 20 (indication of asset being oversold)
+```{r}
+strategy.st <- add.signal(strategy.st, name = "sigThreshold",
+           arguments = list(column = "RSI_3", threshold = 20,
+                            relationship = "lt", cross = FALSE),
+           label = "RSI_3_below_20")
+```
+
+
+### sigFormula
+\footnotesize
+
+* sigFormula: Essentially combines 2 or more indicators/signals to form ensemble signals. 
+
+* Example: a sigFormula signal which indicates that both sma50_above_sma200 and RSI_3_below_20 must be true:
+```{r}
+strategy.st <- add.signal(strategy.st, name = "sigFormula",
+           arguments = list(formula = "sma50_above_sma200 & RSI_3_below_20",
+                            cross = TRUE),
+           label = "longentry")
+```
+
+
+
+### Testing the signals
+\scriptsize
+
+```{r}
+testSignals <- applySignals(strategy.st, mktdata = testIndicator)
+tail(testSignals, n = 50)
+```
+
+* Notice how the sigFormula signal "longentry"" is determined.
+
+# Rules
+
+### Rules
+
+* After constructing the indicators and generated signals based on those indicators, we add rules for those signals.
+
+* There are 2 types of rules:
+  - Entry: Buy shares
+  - Exit: Sell shares and convert the shares into cash 
+
+* We use **add.rules()** to determine the positions we take depending on our signals, what type of order we’ll place and how many shares we will buy.
+
+### Turning on and off a rule
+
+* In this rmd file, there are multiple rules for entry and exit.
+
+* Each rule is defined in an R code chunk. 
+
+* To turn it on, specifiy "eval = T" in the code chunk option, which stands for "evaluation = TRUE".
+
+* To turn it off, specify "eval = F", which stands for "evaluation = FALSE".
+
+### Entry Rule: SMA Crossover
+\scriptsize
+
+* Buy shares when SMA50 crosses above SMA200:
+
+```{r}
+strategy.st <- add.rule(strategy.st, name = "ruleSignal",
+                        arguments = list(sigcol = "ROC_30_above_0", sigval = TRUE,
+                                         orderqty = 1000, ordertype = "market",
+                                         orderside = "long", replace = FALSE,
+                                         prefer = "Open"),
+                        type = "enter")
+```
+
+
+* Notice:
+
+1) The call to add.rule
+2) The name of the strategy (strategy.st)
+3) The name of the strategy function (this is usually “ruleSignal”)
+4) The rule type (type), either “enter” or “exit”
+5) The arguments to ruleSignal:
+
+* The signal column (sigCol)
+* the value that signals a trigger (sigVal)
+* the order type (ordertype)
+* the order side (orderside)
+* to replace any other open signal (replace)
+* The order quantity (orderqty)
+* the preferred price (prefer)
+
+More explanations here:
+
+https://quantstrattrader.wordpress.com/2014/09/24/nuts-and-bolts-of-quantstrat-part-iv/
+
+
+### Exit Rule: SMA Crossover
+
+\scriptsize
+
+* Sell shares when SMA50 falls below SMA200:
+
+
+```{r}
+strategy.st <- add.rule(strategy.st, name = "ruleSignal",
+                        arguments = list(sigcol = "ROC_30_below_0", sigval = TRUE,
+                                         orderqty = "all", ordertype = "market",
+                                         orderside = "long", replace = FALSE,
+                                         prefer = "Open"),
+                        type = "exit")
+```
+
+### Entry Rule: RSI Oversold
+\scriptsize
+
+* Buy shares when RSI falls below 20 (oversold):
+
+```{r}
+strategy.st <- 
+  add.rule(strategy.st, name="ruleSignal", 
+           arguments = list(sigcol = "RSI_3_x_below_20", sigval = TRUE, 
+                            orderqty = 1000, ordertype = "market",
+                            orderside = "long", prefer="Open", replace = FALSE), 
+           type = "enter")
+```
+
+
+### Exit Rule: RSI Overbought
+\footnotesize
+
+* Sell shares when the RSI crosses above 80 (overbought):
+
+```{r}
+strategy.st <- add.rule(strategy.st, name = "ruleSignal",
+         arguments = list(sigcol = "RSI_3_x_above_80", sigval = TRUE,
+                          orderqty = "all", ordertype = "market",
+                          orderside = "long", replace = FALSE,
+                          prefer = "Open"),
+         type = "exit")
+```
+
+
+
+### Entry Rule: SMA50 > SMA200 **AND** the RSI < 20
+\scriptsize
+
+* This rule executes when longentry signal is true (or when both sma50_below_sma200 and RSI_3_below_20 are true). That is when SMA-50 is above SMA-200 and the RSI is below 20.
+
+
+```{r}
+strategy.st <- 
+  add.rule(strategy.st, name="ruleSignal", 
+           arguments = list(sigcol = "longentry", sigval = TRUE, 
+                            orderqty = 1000, ordertype = "market",
+                            orderside = "long", prefer="Open", replace = FALSE), 
+           type = "enter")
+```
+
+
+
+# Apply Strategy
+
+Now we get to the fun part! Do or die. Here we’ll find out if we built our strategy correctly or if we have any errors in our code. Cross your fingers. Let’s go!
+
+### Apply Strategy
+\scriptsize
+
+* In order to run our strategy and obtain results, we must first call the applyStrategy() function:
+
+```{r}
+out <- applyStrategy(strategy = strategy.st, portfolios = portfolio.st)
+```
+
+
+### Update
+
+* Next, do the following (in the given order) 
+1) update portfolio with transactions our strategy took
+2) update account 
+3) update ending equity
+
+```{r}
+updatePortf(portfolio.st)
+
+daterange <- time(getPortfolio(portfolio.st)$summary)[-1]
+
+updateAcct(account.st, daterange)
+updateEndEq(account.st)
+```
+
+# Performance Analysis
+
+Next, we look at all the trade statistics generated.
+
+
+
+### Trading Statistics
+\tiny
+
+Only stocks with trades will show up in the statistics table!
+
+```{r}
+tstats <- tradeStats(Portfolios = portfolio.st)
+tstats[, 4:ncol(tstats)] <- round(tstats[, 4:ncol(tstats)],2)
+tstats_transposed <- t(tstats[,-c(1,2)])
+knitr::kable(cbind(tstats_transposed, Average = rowMeans(tstats_transposed, na.rm = TRUE)))
+```
+
+
+### Trading Statistics Intepretation
+
+**Num.Trades**: the number of trades that are done using the strategy. Each trade includes a transaction for buy and transaction for sell.
+
+**Percen.Positive**: The percent positive statistic lets you know how many of your trades were winners. 
+
+**Profit Factor**: Gross profit / Gross Loss. The amount of profit per unit of risk. The profit factor is how many dollars you make for each dollar you lose. A profit factor above 1 means your strategy is profitable. A profit factor below 1 means you should head back to the drawing board.
+
+**Sharpe Ratio**: risk adjusted returns, $(E[r]- r_f)/\sigma$
+
+**Drawdown**: A drawdown is defined as the loss incurred by an investment during a certain period of time, measured from its peak to its lowest point.
+
+
+* For more intepretation of the performance measures:
+
+https://analyticsprofile.com/r-algo-trading-course/chapter-5-analyzing-bcktesting-results/
+
+### Transaction, Position, Cumulative Profit/Loss
+\scriptsize
+
+* The following code will plot the cumulative profit and drawdown for each stock. 
+* You need to modify the code to plot your own indicator.
+
+```{r, results = "asis"}
+saved_plots <- list() # a list that saves the plot
+for(symbol in symbols){
+
+  cat("\n\n### ", symbol, "\n\n")
+  
+  stock_data <- get(symbol) 
+  
+  # Compute the SMA50 and SMA200, and overlay them 
+  # on top of the price plot:
+  # sma50 <- mySMA(stock_data, n = 50)
+  # sma200 <- mySMA(stock_data, n = 200)
+  
+  chart.Posn(Portfolio = portfolio.st, 
+             Symbol = symbol)
+         #    TA= c("add_TA(sma50, on = 1, col = 'blue')", 
+        #           "add_TA(sma200, on = 1, col = 'red')")
+  
+  # Compute RSI to plot in a new window
+ # rsi_3 <- myRSI(stock_data, n = 3)
+#  rsi_10 <- myRSI(stock_data, n = 10)
+
+ # plot(add_TA(rsi_3))
+#  plot(add_TA(rsi_10))
+
+ 
+  saved_plots[[symbol]] <- recordPlot()
+}
+```
+
+### Strategy Performance
+\footnotesize
+
+```{r, out.height="60%"}
+final_acct <- getAccount(account.st)
+end_eq <- final_acct$summary$End.Eq
+
+returns <- Return.calculate(end_eq, method="log")
+charts.PerformanceSummary(returns, colorset = bluefocus, 
+                          main = "Strategy Performance")
+```
+
+### Returns on Each Asset
+\footnotesize
+```{r}
+returns_2 <- PortfReturns(account.st)
+colnames(returns_2) <- symbols
+returns_2 <- na.omit(cbind(returns_2,Return.calculate(end_eq)))
+names(returns_2)[length(names(returns_2))] <- "Total"
+returns_2 <- returns_2[,c("Total", symbols)]
+round(tail(returns_2,5),6)
+```
+
+### Returns on Each Asset
+
+\footnotesize
+
+```{r}
+chart.Boxplot(returns_2, main = "Strategy Returns", colorset = rich10equal)
+```
+
+
+### Cumulative Returns in Each Asset
+\footnotesize
+
+```{r}
+chart.CumReturns(returns_2, colorset = rich10equal, legend.loc = "topleft", 
+                 main = "Strategy Cumulative Returns")
+```
